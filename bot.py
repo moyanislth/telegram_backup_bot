@@ -24,6 +24,8 @@ from handlers.callbacks import callback_handler
 from handlers.messages import message_handler
 from handlers.errors import error_handler
 
+from health import start_health_server
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +47,9 @@ def main() -> None:
         )
 
     init_db()
+
+    # 启动健康检查 HTTP 服务，满足 Render 等平台对 Web Service 的要求。
+    start_health_server()
 
     logger.info("========================================")
     logger.info("Telegram Resource Backup Bot v3 启动")
