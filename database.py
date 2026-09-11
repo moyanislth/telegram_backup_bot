@@ -29,7 +29,7 @@ def db_connect() -> sqlite3.Connection:
 def init_db() -> None:
     """初始化数据库表结构，并写入首次启动的默认绑定。
 
-    创建 users、bindings、resources 三张表（如果不存在）。
+    创建 users、bindings 表（如果不存在）。
     然后根据 DEFAULT_BINDINGS 插入默认用户和绑定，使用 INSERT OR IGNORE
     避免覆盖已有数据。
     """
@@ -55,20 +55,6 @@ def init_db() -> None:
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            )
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS resources (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                unique_key TEXT NOT NULL UNIQUE,
-                resource_message_id INTEGER,
-                resource_type TEXT NOT NULL,
-                owner_user_id INTEGER NOT NULL,
-                target_chat_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL
             )
             """
         )

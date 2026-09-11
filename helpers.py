@@ -2,14 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-辅助函数模块：提供安全显示名称和保存通知发送。
+辅助函数模块：提供安全显示名称、资源类型判断等小工具。
 """
 
-import logging
-
 from telegram import Message
-
-logger = logging.getLogger(__name__)
 
 
 def safe_display_name(row) -> str:
@@ -33,35 +29,30 @@ def safe_display_name(row) -> str:
     return str(row["user_id"]) if row else "未知用户"
 
 
-async def send_saved_notification(
-    message: Message,
-    saved_count: int,
-    duplicate_count: int = 0,
-    failed_count: int = 0,
-) -> None:
-    """发送资源保存结果通知。
-
-    根据 saved / duplicate / failed 组合生成不同提示文案。
+def resource_type(message: Message) -> str:
+    """判断消息的资源类型。
 
     Args:
-        message: 用于回复的消息对象。
-        saved_count: 成功保存的数量。
-        duplicate_count: 跳过的重复数量。
-        failed_count: 处理失败的数量。
+        message: Telegram Message 对象。
+
+    Returns:
+        资源类型字符串：photo、video、document、audio、voice、animation、
+        video_note、text 或 other。
     """
-    lines = []
-
-    if saved_count:
-        lines.append(f"✅ 已保存 {saved_count} 个资源")
-    if duplicate_count:
-        lines.append(f"♻️ 跳过 {duplicate_count} 个重复资源")
-    if failed_count:
-        lines.append(f"❌ 失败 {failed_count} 个资源")
-
-    if not lines:
-        # 三个计数都为 0 的兜底情况。
-        text = "♻️ 资源已存在，没有重复保存。"
-    else:
-        text = "\n".join(lines)
-
-    await message.reply_text(text)
+    if message.photo:
+        return "photo"
+    if message.video:
+        return "video"
+    if message.document:
+        return "document"
+    if message.audio:
+        return "audio"
+    if message.voice:
+        return "voice"
+    if message.animation:
+        return "animation"
+    if message.video_note:
+        return "video_note"
+    if message.text:
+        return "text"
+    return "other"

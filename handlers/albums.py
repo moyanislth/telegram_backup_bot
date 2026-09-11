@@ -3,21 +3,14 @@
 
 """
 Album 处理模块：处理 Telegram 相册（多图/多视频）。
+
+不做去重，直接使用 copy_messages 保留相册结构。
 """
 
 import logging
 
 from telegram import Message
 from telegram.ext import ContextTypes
-
-from resources import (
-    get_message_unique_key,
-    save_resource_record,
-    update_resource_message_id,
-    delete_resource_record,
-    resource_type,
-)
-from helpers import send_saved_notification
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +23,10 @@ async def process_album(
 ) -> None:
     """处理一个 Album 中的所有消息。
 
-    逐条独立处理，每条都遵循：
-    占位插入 → 复制 → 成功回填 / 失败回滚。
-    单条失败不影响其他条目，避免批量复制部分失败导致孤儿消息。
-
     Args:
         messages: Album 中的消息列表，已按 message_id 排序。
         context: Telegram 上下文。
-        owner_user_id: 资源所属用户 ID。
+        owner_user_id: 资源所属用户 ID（仅用于日志）。
         target_chat_id: 目标群组 Chat ID。
     """
     if not messages:
@@ -53,69 +42,32 @@ async def process_album(
         target_chat_id,
     )
 
-    saved_count = 0
-    duplicate_count = 0
-    failed_count = 0
+    try:
+        await context.bot.copy_messages(
+            chat_id=target_chat_id,
+            from_chat_id=messages[0].chat_id,
+            message_ids=[m.message_id for m in messages],
+        )
 
-    for msg in messages:
-        key = get_message_unique_key(msg)
+        logger.info(
+            "Album 保存成功 user_id=%s album_id=%s count=%s",
+            owner_user_id,
+            album_id,
+            len(messages),
+        )
 
-        # 占位插入 DB：先抢 UNIQUE 约束。
-        if key:
-            inserted = save_resource_record(
-                unique_key=key,
-                resource_message_id=0,
-                resource_type=resource_type(msg),
-                owner_user_id=owner_user_id,
-                target_chat_id=target_chat_id,
-            )
-            if not inserted:
-                duplicate_count += 1
-                logger.info(
-                    "Album 重复资源 user_id=%s key=%s",
-                    owner_user_id,
-                    key,
-                )
-                continue
+        await messages[0].reply_text(
+            f"✅ 已保存 {len(messages)} 个资源"
+        )
 
-        try:
-            copied = await msg.copy(
-                chat_id=target_chat_id,
-            )
+    except Exception as exc:
+        logger.exception(
+            "Album 保存失败 user_id=%s album_id=%s: %s",
+            owner_user_id,
+            album_id,
+            exc,
+        )
 
-            if key:
-                update_resource_message_id(
-                    unique_key=key,
-                    target_chat_id=target_chat_id,
-                    resource_message_id=copied.message_id,
-                )
-
-            saved_count += 1
-
-        except Exception as exc:
-            logger.exception(
-                "Album 单条保存失败 message_id=%s: %s",
-                msg.message_id,
-                exc,
-            )
-
-            if key:
-                delete_resource_record(key, target_chat_id)
-
-            failed_count += 1
-
-    logger.info(
-        "Album 保存完成 user_id=%s album_id=%s saved=%s duplicate=%s failed=%s",
-        owner_user_id,
-        album_id,
-        saved_count,
-        duplicate_count,
-        failed_count,
-    )
-
-    await send_saved_notification(
-        messages[0],
-        saved_count,
-        duplicate_count,
-        failed_count,
-    )
+        await messages[0].reply_text(
+            "❌ Album 保存失败，请检查机器人在目标群组中的权限。"
+        )
