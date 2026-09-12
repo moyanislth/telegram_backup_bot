@@ -88,7 +88,7 @@ def main() -> None:
     application.add_handler(
         ChatMemberHandler(
             my_chat_member_handler,
-            chat_member_types=ChatMemberHandler.MY_CHAT,
+            chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER,
         )
     )
 
