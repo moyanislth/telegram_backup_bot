@@ -41,8 +41,6 @@ venv.bak/
 .env
 .env.local
 .env.*.local
-
-# 保留示例文件
 !.env_example
 
 # =========================
@@ -106,9 +104,18 @@ Thumbs.db
 desktop.ini
 
 # =========================
+# 工具 / Agent / Skills
+# =========================
+.agents/
+.claude/
+skills-lock.json
+CLAUDE.md
+
+# =========================
 # 其他
 # =========================
 *.bak
 *.tmp
 *.orig
 temp/
+doc/

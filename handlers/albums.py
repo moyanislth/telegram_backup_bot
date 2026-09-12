@@ -49,17 +49,6 @@ async def process_album(
             message_ids=[m.message_id for m in messages],
         )
 
-        logger.info(
-            "Album 保存成功 user_id=%s album_id=%s count=%s",
-            owner_user_id,
-            album_id,
-            len(messages),
-        )
-
-        await messages[0].reply_text(
-            f"✅ 已保存 {len(messages)} 个资源"
-        )
-
     except Exception as exc:
         logger.exception(
             "Album 保存失败 user_id=%s album_id=%s: %s",
@@ -71,3 +60,15 @@ async def process_album(
         await messages[0].reply_text(
             "❌ Album 保存失败，请检查机器人在目标群组中的权限。"
         )
+        return
+
+    logger.info(
+        "Album 保存成功 user_id=%s album_id=%s count=%s",
+        owner_user_id,
+        album_id,
+        len(messages),
+    )
+
+    await messages[0].reply_text(
+        f"✅ 已保存 {len(messages)} 个资源"
+    )

@@ -22,6 +22,19 @@ from handlers.single_resource import process_single_message
 
 logger = logging.getLogger(__name__)
 
+# 持有 Album 延迟处理任务的强引用，防止任务被垃圾回收中断；
+# 任务结束后自动移除并记录未捕获异常。
+_pending_album_tasks: set[asyncio.Task] = set()
+
+
+def _log_album_task_exception(task: asyncio.Task) -> None:
+    _pending_album_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        logger.error("Album 延迟处理任务异常: %s", exc)
+
 
 async def message_handler(
     update: Update,
@@ -38,6 +51,10 @@ async def message_handler(
     6. 单条资源
     """
     if not update.message or not update.effective_user:
+        return
+
+    # 仅处理私聊消息（bot.py 已按 ChatType.PRIVATE 过滤，此处双保险）。
+    if not update.effective_chat or update.effective_chat.type != "private":
         return
 
     user = update.effective_user
@@ -61,9 +78,24 @@ async def message_handler(
 
     target_chat_id = int(binding["chat_id"])
 
-    # Telegram 消息链接。
+    # 投票消息暂不支持保存，提前告知。
+    if update.message.poll:
+        await update.message.reply_text("⚠️ 暂不支持保存投票消息。")
+        return
+
+    # Telegram 消息链接：仅对无媒体消息生效，
+    # 带媒体的 caption 链接按普通资源保存，避免媒体被丢弃。
+    has_media = any([
+        update.message.photo,
+        update.message.video,
+        update.message.document,
+        update.message.audio,
+        update.message.voice,
+        update.message.animation,
+        update.message.video_note,
+    ])
     text = update.message.text or update.message.caption or ""
-    link_info = parse_message_link(text)
+    link_info = parse_message_link(text) if not has_media else None
 
     if link_info:
         await process_message_link(
@@ -121,7 +153,9 @@ async def message_handler(
                     target_chat_id,
                 )
 
-            asyncio.create_task(delayed_process())
+            task = asyncio.create_task(delayed_process())
+            _pending_album_tasks.add(task)
+            task.add_done_callback(_log_album_task_exception)
 
         return
 

@@ -44,15 +44,6 @@ async def process_single_message(
             chat_id=target_chat_id,
         )
 
-        logger.info(
-            "资源保存成功 user_id=%s target=%s saved_message_id=%s",
-            owner_user_id,
-            target_chat_id,
-            copied.message_id,
-        )
-
-        await message.reply_text("✅ 已保存到你的资源群组。")
-
     except Exception as exc:
         logger.exception(
             "资源保存失败 user_id=%s target=%s: %s",
@@ -63,3 +54,13 @@ async def process_single_message(
         await message.reply_text(
             "❌ 保存失败，请检查目标资源群组和机器人的权限。"
         )
+        return
+
+    logger.info(
+        "资源保存成功 user_id=%s target=%s saved_message_id=%s",
+        owner_user_id,
+        target_chat_id,
+        copied.message_id,
+    )
+
+    await message.reply_text("✅ 已保存到你的资源群组。")

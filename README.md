@@ -11,11 +11,11 @@
 - 只有管理员和已授权用户可以使用机器人。
 - 管理员可在菜单中管理「用户 → 资源群组」的绑定关系。
 - 每个用户的资源自动保存到自己的绑定群组。
-- SQLite 持久化用户、绑定关系和去重记录。
 - 支持单条消息和 Telegram Album（相册/多图）。
-- 使用 `file_unique_id` / 文本 SHA256 防止重复保存。
-- 支持 `/myid` 查看自己的 Telegram User ID。
-- 支持发送 Telegram 消息链接，机器人会尝试读取公开/有权限访问的消息。
+- 支持 `/searchid`：私聊查看自己的 User ID，群内查看群组 Chat ID。
+- 机器人被加入群组/频道时自动发送欢迎语（含 Chat ID 与配置指引）。
+- 支持发送 Telegram 消息链接（含话题链接），机器人会尝试读取公开/有权限访问的消息。
+- 支持 `/cancel` 取消进行中的绑定操作。
 - 配置通过 `.env` 环境变量管理。
 
 ---
@@ -33,17 +33,18 @@
 ├── keyboards.py               # 键盘模块：主菜单、绑定管理菜单、取消/确认键盘
 ├── states.py                  # 状态管理：user_data 状态键定义、设置/清除状态
 ├── chat_access.py             # 群组访问检查：检查机器人是否有权限访问指定群组
-├── helpers.py                 # 辅助函数：安全显示名称、发送保存结果通知
-├── telegram_links.py          # Telegram 消息链接解析
+├── helpers.py                 # 辅助函数：安全显示名称、安全编辑回调消息
+├── telegram_links.py          # Telegram 消息链接解析（含话题链接）
 ├── handlers/                  # 所有 Telegram 事件处理器
 │   ├── __init__.py            # 空文件，标记为 Python 包
-│   ├── commands.py            # /start、/help、/myid 命令处理
+│   ├── commands.py             # /start、/help、/searchid、/cancel 命令处理
 │   ├── admin_bindings.py      # 管理员绑定管理：菜单、添加、删除、列表、检查、文本输入流程
 │   ├── callbacks.py           # InlineKeyboard 回调统一处理
 │   ├── messages.py            # 普通消息入口：权限检查、绑定获取、链接/Album/单条资源分发
 │   ├── links.py               # 消息链接处理：复制链接指向的内容到目标群组
-│   ├── albums.py              # Album 处理：去重、批量复制、逐条复制回退
-│   ├── single_resource.py     # 单条资源处理：去重、复制、保存记录
+│   ├── albums.py              # Album 处理：批量复制相册
+│   ├── single_resource.py     # 单条资源处理：复制、保存记录
+│   ├── group_events.py        # 群组事件：机器人入群欢迎语
 │   └── errors.py              # 全局错误处理：记录未处理异常
 ├── .env                       # 实际环境变量文件（不要提交到 Git）
 ├── .env_example               # 环境变量示例文件
@@ -58,7 +59,7 @@
 - Windows 用户推荐使用 PowerShell 7
 - 可访问 Telegram Bot API 的网络环境
 - 一个 Telegram Bot Token（从 [@BotFather](https://t.me/BotFather) 获取）
-- 你的 Telegram User ID（可通过 [@userinfobot](https://t.me/userinfobot) 获取，或启动机器人后发送 `/myid`）
+- 你的 Telegram User ID（可通过 [@userinfobot](https://t.me/userinfobot) 获取，或启动机器人后发送 `/searchid`）
 
 ---
 
@@ -109,7 +110,7 @@ BOT_TOKEN=你的新BotToken
 ADMIN_USER_IDS=你的Telegram用户ID
 DEFAULT_BINDINGS={"你的用户ID": -100xxxxxxxxxx}
 DB_FILE=resource_backup.db
-ALBUM_WAIT_SECONDS=1.5
+ALBUM_WAIT_SECONDS=3.0
 ```
 
 各项说明：
@@ -117,8 +118,8 @@ ALBUM_WAIT_SECONDS=1.5
 - `BOT_TOKEN`：Telegram Bot Token，必填。
 - `ADMIN_USER_IDS`：管理员 User ID，多个用英文逗号分隔，例如 `123456789,987654321`。
 - `DEFAULT_BINDINGS`：首次启动时自动建立的绑定，JSON 格式，例如 `{"123456789": -1003145884431}`。可为空 `{}`。
-- `DB_FILE`：SQLite 数据库文件路径，默认 `resource_backup.db`。
-- `ALBUM_WAIT_SECONDS`：Album 等待时间（秒），默认 `1.5`。
+- `DB_FILE`：SQLite 数据库文件路径。不设置时默认存放在项目根目录；设置相对路径时相对于启动时的工作目录，建议用绝对路径。
+- `ALBUM_WAIT_SECONDS`：Album 等待时间（秒），默认 `3.0`。弱网下相册消息到达间隔可能超过等待窗口，相册会被拆分成多条消息保存。
 
 > ⚠️ 安全提示：`.env` 包含敏感信息，请勿提交到 Git 仓库。建议将 `.env` 加入 `.gitignore`。
 
@@ -173,28 +174,32 @@ python bot.py
 2. 将 User ID 发给管理员，由管理员为你绑定资源群组。
 3. 绑定成功后，直接发送图片、视频、文件、音频、文字等资源。
 4. 机器人会自动保存到你的绑定群组，并回复保存结果。
-5. 发送 `/myid` 可随时查看自己的 Telegram User ID。
+5. 发送 `/searchid` 可随时查看自己的 Telegram User ID。
+6. 也可以发送 Telegram 消息链接（t.me/…），机器人会尝试读取并保存。
 
 ### 管理员
 
-1. 发送 `/start`，点击「⚙️ 绑定管理」。
-2. 可添加/修改绑定、删除绑定、查看全部绑定、检查群组。
-3. 添加绑定时，先输入用户 User ID，再输入资源群组 Chat ID。
-4. 机器人会检查群组访问权限，确认无误后点击「✅ 确认绑定」。
+1. 邀请机器人到目标群组/频道，并**将机器人设为管理员**（必需）。
+2. 机器人入群后会自动发送欢迎语，包含该群组的 Chat ID；也可在群内发送 `/searchid` 随时查看。
+3. 私聊机器人发送 `/start`，点击「⚙️ 绑定管理」。
+4. 可添加/修改绑定、删除绑定、查看全部绑定、检查群组。
+5. 添加绑定时，先输入用户 User ID，再输入资源群组 Chat ID。
+6. 机器人会检查群组访问权限（要求机器人为管理员），确认无误后点击「✅ 确认绑定」。
+7. 若该用户已有绑定，确认文案会显示覆盖警告。
+8. 任意输入流程中可发送 `/cancel` 取消当前操作。
 
-> 机器人必须已经加入目标资源群组，并且有发送消息权限。
+> 机器人必须在目标资源群组中是管理员，否则绑定校验不通过。
 
 ---
 
 ## 注意事项
 
 - Bot API 无法绕过 Telegram 的受保护内容、禁止保存/转发限制，也无法访问机器人没有权限读取的消息。
-- 资源去重基于 `file_unique_id` 和文本 SHA256，同一资源在同一目标群组只会保存一次。
-- 数据库文件 `resource_backup.db` 保存了用户、绑定和去重记录，请定期备份。
+- 机器人只处理私聊消息，群组内消息不会被当作资源保存。
+- 数据库文件保存了用户和绑定关系，请定期备份。
 - 如果更换 Bot Token，请及时更新 `.env` 并重启机器人。
 - 如果机器人无法保存资源，请检查：
-  - 机器人是否在目标群组中；
-  - 机器人是否有发送消息权限；
+  - 机器人是否在目标群组中，且被设为管理员；
   - 目标群组 Chat ID 是否正确；
   - 源消息是否允许复制/转发。
 

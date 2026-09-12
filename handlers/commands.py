@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-命令处理模块：/start、/help、/myid。
+命令处理模块：/start、/help、/searchid、/cancel。
 """
 
 import html
@@ -15,6 +15,8 @@ from telegram.ext import ContextTypes
 from permissions import is_admin, user_is_allowed, reject_if_not_allowed
 from users import upsert_user, get_binding
 from keyboards import main_menu
+from states import clear_state, STATE_KEY
+from helpers import HELP_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +54,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         binding_text = f"\n📚 当前资源群：<code>{html.escape(str(target))}</code>"
     elif is_admin(user.id):
-        binding_text = "\n⚠️ 你当前还没有资源群绑定。"
+        binding_text = (
+            "\n\n⚠️ 你还没有任何绑定。请先：\n"
+            "1️⃣ 邀请机器人到目标群组/频道并设为管理员；\n"
+            "2️⃣ 在群内发送 /searchid 获取 Chat ID；\n"
+            "3️⃣ 点击下方 ⚙️ 绑定管理完成绑定。"
+        )
     else:
-        binding_text = "\n⚠️ 你当前没有有效的资源群绑定。"
+        binding_text = (
+            "\n\n⚠️ 你当前没有有效的资源群绑定，请联系管理员。"
+        )
 
     await update.message.reply_text(
         "👋 欢迎使用资源备份机器人！\n\n"
@@ -75,30 +84,54 @@ async def help_command(
         return
 
     await update.message.reply_text(
-        "📖 <b>使用说明</b>\n\n"
-        "• 发送图片、视频、文件、音频、文字等资源\n"
-        "• 多图 Album 会等待片刻后一起处理\n"
-        "• 已保存过的资源会自动跳过\n"
-        "• 每个用户只会保存到自己的绑定群组\n"
-        "• 管理员可以通过「⚙️ 绑定管理」管理用户和群组\n\n"
-        "发送 Telegram 消息链接时，机器人会尝试读取它；"
-        "但无法绕过 Telegram 的受保护内容、禁止保存/转发限制，"
-        "也无法访问机器人没有权限读取的消息。",
+        HELP_TEXT,
         parse_mode=ParseMode.HTML,
         reply_markup=main_menu(update.effective_user.id),
     )
 
 
-async def myid_command(
+async def searchid_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """处理 /myid 命令，显示当前用户的 Telegram User ID。"""
+    """处理 /searchid 命令。
+
+    私聊返回当前用户的 User ID；群组/频道内返回该群组的 Chat ID。
+    群内命令不受隐私模式影响，始终送达机器人。
+    """
     user = update.effective_user
-    if not user:
+    chat = update.effective_chat
+    if not user or not chat:
         return
 
+    if chat.type == "private":
+        reply = (
+            "你的 Telegram User ID 是：\n"
+            f"<code>{user.id}</code>"
+        )
+    else:
+        reply = (
+            f"本{('频道' if chat.type == 'channel' else '群组')} Chat ID 是：\n"
+            f"<code>{chat.id}</code>"
+        )
+
     await update.message.reply_text(
-        f"你的 Telegram User ID 是：\n<code>{user.id}</code>",
+        reply,
         parse_mode=ParseMode.HTML,
+    )
+
+
+async def cancel_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """处理 /cancel 命令，取消当前进行中的操作（如绑定流程）。"""
+    if not update.effective_user:
+        return
+
+    had_state = bool(context.user_data.get(STATE_KEY))
+    clear_state(context)
+
+    await update.message.reply_text(
+        "✅ 已取消当前操作。" if had_state else "当前没有进行中的操作。"
     )

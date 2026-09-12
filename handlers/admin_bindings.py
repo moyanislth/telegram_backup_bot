@@ -24,7 +24,7 @@ from states import (
     PENDING_TITLE_KEY,
 )
 from chat_access import check_chat_access
-from helpers import safe_display_name
+from helpers import safe_display_name, safe_edit
 
 logger = logging.getLogger(__name__)
 
@@ -33,32 +33,28 @@ async def binding_menu_handler(
     query,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """处理绑定管理菜单回调。"""
-    user = query.from_user
+    """处理绑定管理菜单回调。
 
-    if not is_admin(user.id):
-        await query.answer("只有管理员可以管理绑定。", show_alert=True)
-        return
-
+    权限已在 callback_handler 入口统一校验（binding_* 前缀）。
+    """
     clear_state(context)
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         "⚙️ <b>绑定管理</b>\n\n"
         "这里管理「允许使用者 → 资源群组」的关系。",
         parse_mode=ParseMode.HTML,
         reply_markup=binding_menu(),
     )
+    await query.answer()
 
 
 async def binding_list_handler(
     query,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """处理查看全部绑定回调。"""
-    if not is_admin(query.from_user.id):
-        await query.answer("没有权限。", show_alert=True)
-        return
-
+    """处理查看全部绑定回调。权限已在入口统一校验。"""
+    clear_state(context)
     rows = list_bindings()
 
     if not rows:
@@ -82,67 +78,65 @@ async def binding_list_handler(
 
         text = "\n".join(lines)
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         text,
         parse_mode=ParseMode.HTML,
         reply_markup=binding_menu(),
     )
+    await query.answer()
 
 
 async def binding_add_handler(
     query,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """处理添加/修改绑定回调，进入等待 User ID 状态。"""
-    if not is_admin(query.from_user.id):
-        await query.answer("没有权限。", show_alert=True)
-        return
-
+    """处理添加/修改绑定回调，进入等待 User ID 状态。权限已在入口统一校验。"""
     clear_state(context)
     set_state(context, "waiting_user_id")
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         "➕ <b>添加 / 修改绑定</b>\n\n"
         "请输入允许使用者的 Telegram User ID。\n\n"
         "例如：<code>123456789</code>",
         parse_mode=ParseMode.HTML,
         reply_markup=cancel_keyboard(),
     )
+    await query.answer()
 
 
 async def binding_delete_handler(
     query,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """处理删除绑定回调，进入等待删除 User ID 状态。"""
-    if not is_admin(query.from_user.id):
-        await query.answer("没有权限。", show_alert=True)
-        return
-
+    """处理删除绑定回调，进入等待删除 User ID 状态。权限已在入口统一校验。"""
     clear_state(context)
     set_state(context, "waiting_delete_user_id")
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         "🗑 <b>删除绑定</b>\n\n"
         "请输入要删除的 Telegram User ID。",
         parse_mode=ParseMode.HTML,
         reply_markup=cancel_keyboard(),
     )
+    await query.answer()
 
 
 async def binding_check_handler(
     query,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """处理检查群组回调，检查所有启用绑定的群组访问权限。"""
-    if not is_admin(query.from_user.id):
-        await query.answer("没有权限。", show_alert=True)
-        return
+    """处理检查群组回调，检查所有启用绑定的群组访问权限。权限已在入口统一校验。"""
+    clear_state(context)
+    await query.answer("检查中…")
 
     rows = list_bindings()
 
     if not rows:
-        await query.edit_message_text(
+        await safe_edit(
+            query,
             "🔍 目前没有绑定可以检查。",
             reply_markup=binding_menu(),
         )
@@ -174,7 +168,8 @@ async def binding_check_handler(
             f"   {html.escape(reason)}\n"
         )
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         "\n".join(lines),
         parse_mode=ParseMode.HTML,
         reply_markup=binding_menu(),
@@ -198,6 +193,10 @@ async def handle_admin_text_input(
         如果已处理返回 True，否则 False。
     """
     if not update.message or not update.effective_user:
+        return False
+
+    # 绑定流程中收到非文本消息（图片、贴纸等）时静默忽略。
+    if not update.message.text:
         return False
 
     user = update.effective_user
@@ -285,11 +284,20 @@ async def handle_admin_text_input(
         context.user_data[PENDING_TITLE_KEY] = title
         set_state(context, "waiting_confirmation")
 
+        existing = get_binding(pending_user_id)
+        overwrite_warning = ""
+        if existing and existing["enabled"]:
+            overwrite_warning = (
+                f"\n⚠️ 该用户当前已绑定到 <code>{existing['chat_id']}</code>，"
+                "本次操作将覆盖。\n"
+            )
+
         await update.message.reply_text(
             "确认绑定？\n\n"
             f"👤 用户：<code>{pending_user_id}</code>\n"
             f"📚 资源群：<b>{html.escape(str(title))}</b>\n"
-            f"🆔 Chat ID：<code>{chat_id}</code>\n\n"
+            f"🆔 Chat ID：<code>{chat_id}</code>\n"
+            f"{overwrite_warning}\n"
             "机器人检查结果："
             f" {html.escape(reason)}",
             parse_mode=ParseMode.HTML,
@@ -332,6 +340,13 @@ async def handle_admin_text_input(
             f"原资源群：<code>{binding['chat_id']}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=binding_menu(),
+        )
+        return True
+
+    if state == "waiting_confirmation":
+        await update.message.reply_text(
+            "请点击上方的 ✅ 或 ❌ 按钮完成操作。",
+            reply_markup=confirm_binding_keyboard(),
         )
         return True
 

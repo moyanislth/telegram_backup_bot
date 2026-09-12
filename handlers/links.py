@@ -52,11 +52,6 @@ async def process_message_link(
             message_id=source_message_id,
         )
 
-        await message.reply_text(
-            "✅ 已从消息链接保存到你的资源群组。"
-        )
-        return True
-
     except Exception as exc:
         logger.warning(
             "消息链接保存失败 source=%s message_id=%s: %s",
@@ -75,3 +70,8 @@ async def process_message_link(
             "机器人不会绕过 Telegram 的内容保护限制。"
         )
         return False
+
+    await message.reply_text(
+        "✅ 已从消息链接保存到你的资源群组。"
+    )
+    return True

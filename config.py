@@ -50,17 +50,28 @@ except (json.JSONDecodeError, ValueError, TypeError) as exc:
     )
 
 # SQLite 数据库文件路径。
-DB_FILE = Path(os.getenv("DB_FILE", "resource_backup.db"))
+# 相对路径锚定到本文件所在目录，避免工作目录不同导致数据库位置漂移；
+# 也可通过环境变量指定绝对路径覆盖。
+_db_file_env = os.getenv("DB_FILE", "")
+if _db_file_env:
+    DB_FILE = Path(_db_file_env)
+else:
+    DB_FILE = Path(__file__).parent / "resource_backup.db"
 
-# Album 等待时间（秒）。
-ALBUM_WAIT_SECONDS = float(os.getenv("ALBUM_WAIT_SECONDS", "1.5"))
+# Album 等待时间（秒）。默认 3 秒：弱网下相册消息到达间隔可能超过 1.5 秒，
+# 等待过短会把一个相册拆成多条消息保存。
+ALBUM_WAIT_SECONDS = float(os.getenv("ALBUM_WAIT_SECONDS", "3.0"))
 
 # 消息链接正则。
 # 支持：
-#   https://t.me/c/1234567890/123       （私有群组/频道，需要补 -100 前缀）
-#   https://t.me/channel_username/123   （公开用户名）
-#   https://t.me/username/123
+#   https://t.me/c/1234567890/123        （私有群组/频道，需要补 -100 前缀）
+#   https://t.me/c/1234567890/5/123      （私有群组/频道 + 话题）
+#   https://t.me/channel_username/123    （公开用户名）
+#   https://t.me/channel_username/5/123  （公开用户名 + 话题）
+# 最后一段数字始终是消息 ID，倒数第二段（若存在）是话题 ID。
 MESSAGE_LINK_RE = re.compile(
     r"https?://t\.me/"
-    r"(?:c/(\d+)|([A-Za-z0-9_]+))/(\d+)"
+    r"(?:c/(\d+)|([A-Za-z0-9_]+))"
+    r"(?:/(\d+))?"
+    r"/(\d+)"
 )

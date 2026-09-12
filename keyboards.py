@@ -22,6 +22,18 @@ def main_menu(user_id: int) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
+                "➡️ 转发备份",
+                callback_data="forward_guide",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🔍 查询 ID",
+                callback_data="searchid_guide",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "📖 使用说明",
                 callback_data="help",
             )

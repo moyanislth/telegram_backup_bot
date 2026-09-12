@@ -32,26 +32,25 @@ async def check_chat_access(
     try:
         chat = await context.bot.get_chat(chat_id)
 
-        # 对群组/超级群组/频道检查 Bot 自身权限。
+        # 按设计愿景，机器人必须在群组/频道中是管理员（或创建者），
+        # 才能保证 copy_message / copy_message_group 稳定工作。
         try:
             me = await context.bot.get_me()
             member = await context.bot.get_chat_member(chat_id, me.id)
 
             status = getattr(member, "status", "")
-            if status in ("left", "kicked"):
-                return False, "机器人不在这个群组/频道中。", chat
-
-            # administrator / creator 一般有发送权限。
             if status in ("administrator", "creator"):
                 return True, "机器人有管理员权限。", chat
 
-            # 普通成员在 supergroup 中通常可以发送，但具体权限可能被限制。
-            if status == "member":
-                can_send = getattr(member, "can_send_messages", True)
-                if can_send is False:
-                    return False, "机器人当前没有发送消息权限。", chat
+            if status == "left":
+                return False, "机器人不在这个群组/频道中。", chat
+            if status == "kicked":
+                return False, "机器人已被移出/封禁。", chat
 
-            return True, "群组访问检查通过。", chat
+            return False, (
+                "机器人在该群组/频道中不是管理员，"
+                "请将机器人设为管理员后重试。"
+            ), chat
 
         except Exception as exc:
             logger.warning(

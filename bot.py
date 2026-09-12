@@ -12,6 +12,7 @@ import logging
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -19,9 +20,10 @@ from telegram.ext import (
 
 from config import BOT_TOKEN, ADMIN_USER_IDS, DB_FILE, ALBUM_WAIT_SECONDS
 from database import init_db
-from handlers.commands import start, help_command, myid_command
+from handlers.commands import start, help_command, searchid_command, cancel_command
 from handlers.callbacks import callback_handler
 from handlers.messages import message_handler
+from handlers.group_events import my_chat_member_handler
 from handlers.errors import error_handler
 
 from health import start_health_server
@@ -71,16 +73,28 @@ def main() -> None:
         CommandHandler("help", help_command)
     )
     application.add_handler(
-        CommandHandler("myid", myid_command)
+        CommandHandler("searchid", searchid_command)
+    )
+    application.add_handler(
+        CommandHandler("cancel", cancel_command)
     )
 
     application.add_handler(
         CallbackQueryHandler(callback_handler)
     )
 
+    # 机器人被加入群组/频道时发送欢迎与配置指引。
+    # my_chat_member 属于 Telegram 默认更新集，无需额外 allowed_updates。
+    application.add_handler(
+        ChatMemberHandler(
+            my_chat_member_handler,
+            chat_member_types=ChatMemberHandler.MY_CHAT,
+        )
+    )
+
     application.add_handler(
         MessageHandler(
-            filters.ALL & ~filters.COMMAND,
+            filters.ChatType.PRIVATE & ~filters.COMMAND,
             message_handler,
         )
     )
